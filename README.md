@@ -65,7 +65,16 @@ Ranked by progress during the second run (before it ended) and by total goods he
 
 - Haiku agents took the top 4 places. The leader was **Nemesis**: total goods 340 against 300 for agents that only swapped goods one for one.
 - The picture is **one snapshot of one unfinished run**, not proof that the hard-haggler strategy beats real opponents. Luck and the other agents' behaviour matter.
-- In the final shared market, an earlier version of Nemesis ranked first of 11 traders at one check (397 total goods). A later eager-prompt version was started afterwards; see `final/nemesis/logs` (not committed) or the market leaderboard for what happened. No final result is recorded in this repo.
+- **Final market: Nemesis won.** It reached its goal of 300 dollars (total wealth 375) in **8 min 41 s**, which closed the trade ("Trade closed (goal)"). The leaderboard lists Nemesis, goal 300 dollar, duration 521 s. The goal was lowered during the competition: the trade view showed *Reach 500 $ dollar* while trading, and the market's goal multiplier is now 3 (not changed by this project; most likely a market-admin change, which I could not verify).
+- Earlier, while the final market was trading, Nemesis led with 427 total goods (345 dollars) against 208–331 for the other traders:
+
+  ![Final market while trading: Nemesis leads with 427 total wealth](docs/images/final-market-trading.png)
+
+- The market after the goal was reached and the trade closed:
+
+  ![Final market closed: Nemesis reached 300 dollars in 8m 41s](docs/images/final-market-closed-nemesis-won.png)
+
+- One win in one market: it says little about how the strategy would do against a different field, and the lower goal helped.
 
 ## Lessons
 
@@ -89,6 +98,7 @@ Ranked by progress during the second run (before it ended) and by total goods he
 │   ├── agent-report.html  #   annotated explanation of the code
 │   ├── AGENTS.md, EXPLAIN_CODE.md, CLAUDE.md
 │   └── .env               #   NOT committed (see agents/.env.sample)
+├── docs/images/           # screenshots of the final market
 └── final/
     ├── afc.py
     └── nemesis/           # the agent in the final market (eager prompt,

@@ -1,7 +1,7 @@
 # Experiment summary
 
 ## In short
-We tested 15 trading agents (5 strategies × 3 models) in a single-player market, picked the best, **Nemesis**, and now run it alone in the shared final competition.
+We tested 15 trading agents (5 strategies × 3 models) in a single-player market, picked the best, **Nemesis**, and ran it alone in the shared final competition, where it won.
 
 ## Models
 | Model | Price in/out per 1M tokens | Result in the test |
@@ -38,14 +38,17 @@ We tested 15 trading agents (5 strategies × 3 models) in a single-player market
 - It was the only agent whose total goods grew above 300; the others only swapped goods 1:1 (340 vs 300 at the time).
 - Caveat: this was a snapshot of one unfinished run, not proof that the strategy beats real opponents.
 
-## Final market (shared, public)
-- Nemesis runs as the main trader (this market allows no sub-traders). It uses Haiku 5.5 with the S3 hard-haggler prompt, a retry on 402, and a trimmed history to keep turns cheap.
-- Its latest version has an **eager** prompt: post several offers at once, accept small-margin deals, never wait.
-- At the last full check (previous version) it ranked 1st of 11 traders with 397 goods. The eager version had just started, with 335 goods and no model calls yet.
-- Nobody has reached the goal (5× the starting amount of one good) yet.
+## Final market (shared, public): Nemesis won
+- Nemesis ran as the main trader (this market allows no sub-traders): Haiku 5.5 with the S3 hard-haggler prompt (eager variant), a retry on 402, and a trimmed history.
+- It reached its goal (300 dollars, total wealth 375) in **8 min 41 s** and closed the trade. The goal had been lowered from 500 during the competition (admin change, goal multiplier now 3).
+- While trading it led with 427 total goods against 208–331 for the others.
+
+![Final market while trading](docs/images/final-market-trading.png)
+![Final market closed, Nemesis reached its goal](docs/images/final-market-closed-nemesis-won.png)
 
 ## Files
 - `experiment.env`, `afc.py`: keys and API helper
 - `agents/<name>/`: the 15 test agents
 - `final/nemesis/`: the agent in the final market
+- `docs/images/`: screenshots of the final market
 - `EXPERIMENT.md`: agent table and change log
