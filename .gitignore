@@ -1,0 +1,8 @@
+*.env
+.env
+logs/
+*.pid
+run.out
+__pycache__/
+.DS_Store
+.idea/

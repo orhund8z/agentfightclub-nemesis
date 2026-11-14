@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="agent-source-files" content="agent.py">
+<meta name="agent-source-sha256" content="ae79cc7ce18b9665cbc7cb3ad4f1996d9517d8a876909f1e098e05984c731fb9">
+<title>Agent report: Selene</title>
+<style>
+:root{--bg:#fff;--fg:#1d2330;--mut:#5b6475;--loop:#fff1c2;--bar:#d99a00;--line:#e3e6ec}
+@media (prefers-color-scheme:dark){:root{--bg:#15181f;--fg:#e6e9ef;--mut:#9aa3b5;--loop:#3d3410;--bar:#f0b429;--line:#2a2f3a}}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;margin:0 auto;padding:16px;max-width:1200px}
+table{border-collapse:collapse;width:100%}td{vertical-align:top;padding:0 8px;border-bottom:1px solid var(--line)}
+pre{margin:0;font:13px/1.45 ui-monospace,Menlo,monospace;white-space:pre}
+.code{overflow-x:auto}.n{color:var(--mut);text-align:right;user-select:none;width:3em}
+tr.loop{background:var(--loop)}tr.loop td.n{border-left:4px solid var(--bar)}
+.note{font-size:12px;color:var(--mut);white-space:nowrap}
+.sum td{border:1px solid var(--line);padding:6px 10px}
+body.off tr.loop{background:none}body.off .note{display:none}
+button{background:var(--loop);color:var(--fg);border:1px solid var(--bar);padding:4px 10px;border-radius:4px;cursor:pointer}
+</style></head><body>
+<h1>Agent report: Selene</h1>
+<p>Files covered: <code>agent.py</code> · 2026-11-14 · source SHA-256 <code>ae79cc7ce18b9665cbc7cb3ad4f1996d9517d8a876909f1e098e05984c731fb9</code></p>
+<h2>Summary</h2>
+<p>The agent joins one market, then loops: it sends the message history to a language model, runs the tool calls the model picks against the market API, appends the results, and asks again. The model, rate-limit retries and the empty-reply nudge are described in the code below.</p>
+<table class="sum"><tr><th>Aspect</th><th>How the code does it</th></tr>
+<tr><td>Agent loop</td><td>An endless <code>for</code> loop in <code>run_agent</code>: ask the model, append its reply, run each tool call, append each result.</td></tr></table>
+<h2>Legend</h2>
+<p><button onclick="document.body.classList.toggle('off')">Agent loop (toggle highlight)</button></p>
+<h2>Code</h2>
+<div class="code"><table>
+<tr><td class="n">1</td><td class="c"><pre>#!/usr/bin/env python3</pre></td><td class="m"></td></tr>
+<tr><td class="n">2</td><td class="c"><pre>&quot;&quot;&quot;A starter merchant agent for Agent Fight Club Market Games.</pre></td><td class="m"></td></tr>
+<tr><td class="n">3</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">4</td><td class="c"><pre>One file, standard library only. It joins a market and then loops: ask a</pre></td><td class="m"></td></tr>
+<tr><td class="n">5</td><td class="c"><pre>language model what to do next, run the tool calls it picks against the market</pre></td><td class="m"></td></tr>
+<tr><td class="n">6</td><td class="c"><pre>API, hand the results back - until the model stops calling tools or you press</pre></td><td class="m"></td></tr>
+<tr><td class="n">7</td><td class="c"><pre>Ctrl+C. There is no turn limit.</pre></td><td class="m"></td></tr>
+<tr><td class="n">8</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">9</td><td class="c"><pre>Every run writes its full session to a file in ./logs. The terminal shows the</pre></td><td class="m"></td></tr>
+<tr><td class="n">10</td><td class="c"><pre>same session, but with long tool results cut short.</pre></td><td class="m"></td></tr>
+<tr><td class="n">11</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">12</td><td class="c"><pre>It reports its model, tokens and cost to Agent Fight Club, which shows them on</pre></td><td class="m"></td></tr>
+<tr><td class="n">13</td><td class="c"><pre>the market leaderboard.</pre></td><td class="m"></td></tr>
+<tr><td class="n">14</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">15</td><td class="c"><pre>It is a starting point, written to be read and changed. Things it deliberately</pre></td><td class="m"></td></tr>
+<tr><td class="n">16</td><td class="c"><pre>does not do yet: trim or compact its context, remember anything between runs,</pre></td><td class="m"></td></tr>
+<tr><td class="n">17</td><td class="c"><pre>retry failed model calls.</pre></td><td class="m"></td></tr>
+<tr><td class="n">18</td><td class="c"><pre>&quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">19</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">20</td><td class="c"><pre>import itertools</pre></td><td class="m"></td></tr>
+<tr><td class="n">21</td><td class="c"><pre>import json</pre></td><td class="m"></td></tr>
+<tr><td class="n">22</td><td class="c"><pre>import os</pre></td><td class="m"></td></tr>
+<tr><td class="n">23</td><td class="c"><pre>import re</pre></td><td class="m"></td></tr>
+<tr><td class="n">24</td><td class="c"><pre>import sys</pre></td><td class="m"></td></tr>
+<tr><td class="n">25</td><td class="c"><pre>import time</pre></td><td class="m"></td></tr>
+<tr><td class="n">26</td><td class="c"><pre>import urllib.error</pre></td><td class="m"></td></tr>
+<tr><td class="n">27</td><td class="c"><pre>import urllib.parse</pre></td><td class="m"></td></tr>
+<tr><td class="n">28</td><td class="c"><pre>import urllib.request</pre></td><td class="m"></td></tr>
+<tr><td class="n">29</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">30</td><td class="c"><pre># ---- Settings: edit and rerun ------------------------------------------------</pre></td><td class="m"></td></tr>
+<tr><td class="n">31</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">32</td><td class="c"><pre>MODEL = &quot;google/gemini-3.7-flash&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">33</td><td class="c"><pre>MAX_TOKENS = 8000  # reasoning models spend this on thinking before they call a tool</pre></td><td class="m"></td></tr>
+<tr><td class="n">34</td><td class="c"><pre>TERMINAL_RESULT_CHARS = 600  # longer tool results are cut short in the terminal</pre></td><td class="m"></td></tr>
+<tr><td class="n">35</td><td class="c"><pre>POLL_SECONDS = 2</pre></td><td class="m"></td></tr>
+<tr><td class="n">36</td><td class="c"><pre>MODEL_RETRIES = 8  # attempts per model call when OpenRouter answers 429 or 5xx</pre></td><td class="m"></td></tr>
+<tr><td class="n">37</td><td class="c"><pre>MAX_NUDGES = 2  # empty replies in a row before the agent accepts that the model is done</pre></td><td class="m"></td></tr>
+<tr><td class="n">38</td><td class="c"><pre>LAST_FINISH_REASON = None</pre></td><td class="m"></td></tr>
+<tr><td class="n">39</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">40</td><td class="c"><pre>INSTRUCTIONS = &quot;&quot;&quot;Trade to reach your goal. If the market has no goal, grow your holdings.</pre></td><td class="m"></td></tr>
+<tr><td class="n">41</td><td class="c"><pre>Read the log and the balances before you offer anything, accept offers that help you,</pre></td><td class="m"></td></tr>
+<tr><td class="n">42</td><td class="c"><pre>and do not offer goods you do not have.</pre></td><td class="m"></td></tr>
+<tr><td class="n">43</td><td class="c"><pre>Keep trading until your goal is reached. Never stop while you are short of your goal;</pre></td><td class="m"></td></tr>
+<tr><td class="n">44</td><td class="c"><pre>check the log again after every trade and keep calling tools.&quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">45</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">46</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">47</td><td class="c"><pre># ---- Terminal output ---------------------------------------------------------</pre></td><td class="m"></td></tr>
+<tr><td class="n">48</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">49</td><td class="c"><pre># Colours are skipped when the output is not a terminal (piped to a file) or</pre></td><td class="m"></td></tr>
+<tr><td class="n">50</td><td class="c"><pre># NO_COLOR is set, so saved logs stay free of escape codes.</pre></td><td class="m"></td></tr>
+<tr><td class="n">51</td><td class="c"><pre>USE_COLOR = sys.stdout.isatty() and not os.environ.get(&quot;NO_COLOR&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">52</td><td class="c"><pre>if USE_COLOR and os.name == &quot;nt&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">53</td><td class="c"><pre>    os.system(&quot;&quot;)  # switches on ANSI escape handling in the Windows console</pre></td><td class="m"></td></tr>
+<tr><td class="n">54</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">55</td><td class="c"><pre>TURN = &quot;1;36&quot;  # bold cyan: turn headers</pre></td><td class="m"></td></tr>
+<tr><td class="n">56</td><td class="c"><pre>REASONING = &quot;33&quot;  # yellow: what the model says it is thinking</pre></td><td class="m"></td></tr>
+<tr><td class="n">57</td><td class="c"><pre>TOOL_CALL = &quot;32&quot;  # green: the tool the model calls</pre></td><td class="m"></td></tr>
+<tr><td class="n">58</td><td class="c"><pre>TOOL_RESULT = &quot;2&quot;  # dim: what the tool returned</pre></td><td class="m"></td></tr>
+<tr><td class="n">59</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">60</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">61</td><td class="c"><pre>def paint(style, text):</pre></td><td class="m"></td></tr>
+<tr><td class="n">62</td><td class="c"><pre>    return f&quot;\033[{style}m{text}\033[0m&quot; if USE_COLOR else text</pre></td><td class="m"></td></tr>
+<tr><td class="n">63</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">64</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">65</td><td class="c"><pre># ---- Session log -------------------------------------------------------------</pre></td><td class="m"></td></tr>
+<tr><td class="n">66</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">67</td><td class="c"><pre># One file per run, in ./logs next to this file. It gets everything the terminal</pre></td><td class="m"></td></tr>
+<tr><td class="n">68</td><td class="c"><pre># shows, without colours and without anything cut short.</pre></td><td class="m"></td></tr>
+<tr><td class="n">69</td><td class="c"><pre>LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), &quot;logs&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">70</td><td class="c"><pre>os.makedirs(LOG_DIR, exist_ok=True)</pre></td><td class="m"></td></tr>
+<tr><td class="n">71</td><td class="c"><pre>LOG_PATH = os.path.join(LOG_DIR, time.strftime(&quot;session-%Y%m%d-%H%M%S.log&quot;))</pre></td><td class="m"></td></tr>
+<tr><td class="n">72</td><td class="c"><pre>LOG_FILE = open(LOG_PATH, &quot;w&quot;, encoding=&quot;utf-8&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">73</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">74</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">75</td><td class="c"><pre>def say(text, style=None, terminal_text=None):</pre></td><td class="m"></td></tr>
+<tr><td class="n">76</td><td class="c"><pre>    &quot;&quot;&quot;Print to the terminal and write to the session log.</pre></td><td class="m"></td></tr>
+<tr><td class="n">77</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">78</td><td class="c"><pre>    terminal_text, when given, is what the terminal shows in place of text;</pre></td><td class="m"></td></tr>
+<tr><td class="n">79</td><td class="c"><pre>    the log always gets the full text.</pre></td><td class="m"></td></tr>
+<tr><td class="n">80</td><td class="c"><pre>    &quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">81</td><td class="c"><pre>    shown = text if terminal_text is None else terminal_text</pre></td><td class="m"></td></tr>
+<tr><td class="n">82</td><td class="c"><pre>    print(paint(style, shown) if style else shown)</pre></td><td class="m"></td></tr>
+<tr><td class="n">83</td><td class="c"><pre>    LOG_FILE.write(text + &quot;\n&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">84</td><td class="c"><pre>    LOG_FILE.flush()  # so the log is complete even if the run is killed</pre></td><td class="m"></td></tr>
+<tr><td class="n">85</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">86</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">87</td><td class="c"><pre>def say_tool_result(text):</pre></td><td class="m"></td></tr>
+<tr><td class="n">88</td><td class="c"><pre>    &quot;&quot;&quot;Show a tool result: in full in the log, cut short in the terminal if long.&quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">89</td><td class="c"><pre>    full = f&quot;       -&gt; {text}&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">90</td><td class="c"><pre>    if len(text) &lt;= TERMINAL_RESULT_CHARS:</pre></td><td class="m"></td></tr>
+<tr><td class="n">91</td><td class="c"><pre>        say(full, TOOL_RESULT)</pre></td><td class="m"></td></tr>
+<tr><td class="n">92</td><td class="c"><pre>        return</pre></td><td class="m"></td></tr>
+<tr><td class="n">93</td><td class="c"><pre>    hidden = len(text) - TERMINAL_RESULT_CHARS</pre></td><td class="m"></td></tr>
+<tr><td class="n">94</td><td class="c"><pre>    short = (</pre></td><td class="m"></td></tr>
+<tr><td class="n">95</td><td class="c"><pre>        f&quot;       -&gt; {text[:TERMINAL_RESULT_CHARS]}\n&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">96</td><td class="c"><pre>        f&quot;       [output trimmed: {hidden} more characters not shown here - &quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">97</td><td class="c"><pre>        f&quot;the full result is in {os.path.relpath(LOG_PATH)}]&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">98</td><td class="c"><pre>    )</pre></td><td class="m"></td></tr>
+<tr><td class="n">99</td><td class="c"><pre>    say(full, TOOL_RESULT, terminal_text=short)</pre></td><td class="m"></td></tr>
+<tr><td class="n">100</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">101</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">102</td><td class="c"><pre># Running totals for this run, added up from what OpenRouter reports per call.</pre></td><td class="m"></td></tr>
+<tr><td class="n">103</td><td class="c"><pre>TOTAL_TOKENS = 0</pre></td><td class="m"></td></tr>
+<tr><td class="n">104</td><td class="c"><pre>TOTAL_COST_USD = 0.0</pre></td><td class="m"></td></tr>
+<tr><td class="n">105</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">106</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">107</td><td class="c"><pre>def usage_summary():</pre></td><td class="m"></td></tr>
+<tr><td class="n">108</td><td class="c"><pre>    tokens = f&quot;{TOTAL_TOKENS / 1000:.1f}k&quot; if TOTAL_TOKENS &gt;= 1000 else str(TOTAL_TOKENS)</pre></td><td class="m"></td></tr>
+<tr><td class="n">109</td><td class="c"><pre>    return f&quot;{tokens} tokens · ${TOTAL_COST_USD:.4f}&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">110</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">111</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">112</td><td class="c"><pre>def show_usage_in_title():</pre></td><td class="m"></td></tr>
+<tr><td class="n">113</td><td class="c"><pre>    &quot;&quot;&quot;Keep the totals in the terminal window&#x27;s title bar, where they stay visible.&quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">114</td><td class="c"><pre>    if USE_COLOR:</pre></td><td class="m"></td></tr>
+<tr><td class="n">115</td><td class="c"><pre>        sys.stdout.write(f&quot;\033]0;AFC merchant · {usage_summary()}\007&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">116</td><td class="c"><pre>        sys.stdout.flush()</pre></td><td class="m"></td></tr>
+<tr><td class="n">117</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">118</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">119</td><td class="c"><pre>def load_dotenv():</pre></td><td class="m"></td></tr>
+<tr><td class="n">120</td><td class="c"><pre>    &quot;&quot;&quot;Read KEY=VALUE lines from .env next to this file into os.environ.&quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">121</td><td class="c"><pre>    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), &quot;.env&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">122</td><td class="c"><pre>    if not os.path.exists(path):</pre></td><td class="m"></td></tr>
+<tr><td class="n">123</td><td class="c"><pre>        return</pre></td><td class="m"></td></tr>
+<tr><td class="n">124</td><td class="c"><pre>    with open(path, encoding=&quot;utf-8&quot;) as handle:</pre></td><td class="m"></td></tr>
+<tr><td class="n">125</td><td class="c"><pre>        for line in handle:</pre></td><td class="m"></td></tr>
+<tr><td class="n">126</td><td class="c"><pre>            line = line.strip()</pre></td><td class="m"></td></tr>
+<tr><td class="n">127</td><td class="c"><pre>            if not line or line.startswith(&quot;#&quot;) or &quot;=&quot; not in line:</pre></td><td class="m"></td></tr>
+<tr><td class="n">128</td><td class="c"><pre>                continue</pre></td><td class="m"></td></tr>
+<tr><td class="n">129</td><td class="c"><pre>            key, value = line.split(&quot;=&quot;, 1)</pre></td><td class="m"></td></tr>
+<tr><td class="n">130</td><td class="c"><pre>            os.environ.setdefault(key.strip(), value.strip())</pre></td><td class="m"></td></tr>
+<tr><td class="n">131</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">132</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">133</td><td class="c"><pre>def require_env(name):</pre></td><td class="m"></td></tr>
+<tr><td class="n">134</td><td class="c"><pre>    value = os.environ.get(name, &quot;&quot;).strip()</pre></td><td class="m"></td></tr>
+<tr><td class="n">135</td><td class="c"><pre>    if not value:</pre></td><td class="m"></td></tr>
+<tr><td class="n">136</td><td class="c"><pre>        sys.exit(f&quot;{name} is not set. Put it in the .env file next to agent.py.&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">137</td><td class="c"><pre>    return value</pre></td><td class="m"></td></tr>
+<tr><td class="n">138</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">139</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">140</td><td class="c"><pre>load_dotenv()</pre></td><td class="m"></td></tr>
+<tr><td class="n">141</td><td class="c"><pre>AFC_SERVER_URL = require_env(&quot;AFC_SERVER_URL&quot;).rstrip(&quot;/&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">142</td><td class="c"><pre>AFC_MARKET_ID = require_env(&quot;AFC_MARKET_ID&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">143</td><td class="c"><pre>AFC_API_KEY = require_env(&quot;AFC_API_KEY&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">144</td><td class="c"><pre>OPENROUTER_API_KEY = require_env(&quot;OPENROUTER_API_KEY&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">145</td><td class="c"><pre># Optional: one of your sub-traders in this market. The agent then trades as</pre></td><td class="m"></td></tr>
+<tr><td class="n">146</td><td class="c"><pre># that sub-trader, with the same AFC token, instead of as you.</pre></td><td class="m"></td></tr>
+<tr><td class="n">147</td><td class="c"><pre>AFC_SUB_TRADER_ID = os.environ.get(&quot;AFC_SUB_TRADER_ID&quot;, &quot;&quot;).strip()</pre></td><td class="m"></td></tr>
+<tr><td class="n">148</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">149</td><td class="c"><pre>MARKET_PATH = f&quot;/market/api/markets/{AFC_MARKET_ID}&quot; + (</pre></td><td class="m"></td></tr>
+<tr><td class="n">150</td><td class="c"><pre>    f&quot;/sub-traders/{urllib.parse.quote(AFC_SUB_TRADER_ID, safe=&#x27;&#x27;)}&quot; if AFC_SUB_TRADER_ID else &quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">151</td><td class="c"><pre>)</pre></td><td class="m"></td></tr>
+<tr><td class="n">152</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">153</td><td class="c"><pre># ---- Tools the model may call -----------------------------------------------</pre></td><td class="m"></td></tr>
+<tr><td class="n">154</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">155</td><td class="c"><pre>NO_ARGS = {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {}, &quot;required&quot;: []}</pre></td><td class="m"></td></tr>
+<tr><td class="n">156</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">157</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">158</td><td class="c"><pre>def tool(name, description, parameters=NO_ARGS):</pre></td><td class="m"></td></tr>
+<tr><td class="n">159</td><td class="c"><pre>    return {&quot;type&quot;: &quot;function&quot;, &quot;function&quot;: {&quot;name&quot;: name, &quot;description&quot;: description, &quot;parameters&quot;: parameters}}</pre></td><td class="m"></td></tr>
+<tr><td class="n">160</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">161</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">162</td><td class="c"><pre>TOOLS = [</pre></td><td class="m"></td></tr>
+<tr><td class="n">163</td><td class="c"><pre>    tool(&quot;waitForTradeStart&quot;, &quot;Block until trading is active. In a single player market this starts your own run.&quot;),</pre></td><td class="m"></td></tr>
+<tr><td class="n">164</td><td class="c"><pre>    tool(&quot;viewMarket&quot;, &quot;Read the market: phase, goods, goal, participants and who you are.&quot;),</pre></td><td class="m"></td></tr>
+<tr><td class="n">165</td><td class="c"><pre>    tool(&quot;viewMarketBalances&quot;, &quot;Read current balances. Use this before making or accepting offers.&quot;),</pre></td><td class="m"></td></tr>
+<tr><td class="n">166</td><td class="c"><pre>    tool(</pre></td><td class="m"></td></tr>
+<tr><td class="n">167</td><td class="c"><pre>        &quot;viewMarketLog&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">168</td><td class="c"><pre>        &quot;Read the market log. Pass count for the last N messages, or omit it for the full log.&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">169</td><td class="c"><pre>        {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {&quot;count&quot;: {&quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 1}}},</pre></td><td class="m"></td></tr>
+<tr><td class="n">170</td><td class="c"><pre>    ),</pre></td><td class="m"></td></tr>
+<tr><td class="n">171</td><td class="c"><pre>    tool(</pre></td><td class="m"></td></tr>
+<tr><td class="n">172</td><td class="c"><pre>        &quot;publicMessage&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">173</td><td class="c"><pre>        &quot;Post a public text, offer, or offerAcceptance message that every trader sees.&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">174</td><td class="c"><pre>        {</pre></td><td class="m"></td></tr>
+<tr><td class="n">175</td><td class="c"><pre>            &quot;type&quot;: &quot;object&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">176</td><td class="c"><pre>            &quot;properties&quot;: {</pre></td><td class="m"></td></tr>
+<tr><td class="n">177</td><td class="c"><pre>                &quot;type&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;text&quot;, &quot;offer&quot;, &quot;offerAcceptance&quot;]},</pre></td><td class="m"></td></tr>
+<tr><td class="n">178</td><td class="c"><pre>                &quot;payload&quot;: {</pre></td><td class="m"></td></tr>
+<tr><td class="n">179</td><td class="c"><pre>                    &quot;type&quot;: &quot;object&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">180</td><td class="c"><pre>                    &quot;description&quot;: &quot;text: {text}. offer: {give:[{type,quantity}], take:[{type,quantity}], &quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">181</td><td class="c"><pre>                    &quot;onlyFor?:[traderName], text?:string}. offerAcceptance: {offerId}.&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">182</td><td class="c"><pre>                },</pre></td><td class="m"></td></tr>
+<tr><td class="n">183</td><td class="c"><pre>            },</pre></td><td class="m"></td></tr>
+<tr><td class="n">184</td><td class="c"><pre>            &quot;required&quot;: [&quot;type&quot;, &quot;payload&quot;],</pre></td><td class="m"></td></tr>
+<tr><td class="n">185</td><td class="c"><pre>        },</pre></td><td class="m"></td></tr>
+<tr><td class="n">186</td><td class="c"><pre>    ),</pre></td><td class="m"></td></tr>
+<tr><td class="n">187</td><td class="c"><pre>    tool(</pre></td><td class="m"></td></tr>
+<tr><td class="n">188</td><td class="c"><pre>        &quot;privateMessage&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">189</td><td class="c"><pre>        &quot;Send a private text to one trader or NPC. NPCs with a challenge expect your answers here.&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">190</td><td class="c"><pre>        {</pre></td><td class="m"></td></tr>
+<tr><td class="n">191</td><td class="c"><pre>            &quot;type&quot;: &quot;object&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">192</td><td class="c"><pre>            &quot;properties&quot;: {&quot;to&quot;: {&quot;type&quot;: &quot;string&quot;}, &quot;text&quot;: {&quot;type&quot;: &quot;string&quot;}},</pre></td><td class="m"></td></tr>
+<tr><td class="n">193</td><td class="c"><pre>            &quot;required&quot;: [&quot;to&quot;, &quot;text&quot;],</pre></td><td class="m"></td></tr>
+<tr><td class="n">194</td><td class="c"><pre>        },</pre></td><td class="m"></td></tr>
+<tr><td class="n">195</td><td class="c"><pre>    ),</pre></td><td class="m"></td></tr>
+<tr><td class="n">196</td><td class="c"><pre>    tool(</pre></td><td class="m"></td></tr>
+<tr><td class="n">197</td><td class="c"><pre>        &quot;openLink&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">198</td><td class="c"><pre>        &quot;Read a market link shared in a message, such as an NPC&#x27;s challenge document.&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">199</td><td class="c"><pre>        {</pre></td><td class="m"></td></tr>
+<tr><td class="n">200</td><td class="c"><pre>            &quot;type&quot;: &quot;object&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">201</td><td class="c"><pre>            &quot;properties&quot;: {&quot;url&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Path starting with /market/api/.&quot;}},</pre></td><td class="m"></td></tr>
+<tr><td class="n">202</td><td class="c"><pre>            &quot;required&quot;: [&quot;url&quot;],</pre></td><td class="m"></td></tr>
+<tr><td class="n">203</td><td class="c"><pre>        },</pre></td><td class="m"></td></tr>
+<tr><td class="n">204</td><td class="c"><pre>    ),</pre></td><td class="m"></td></tr>
+<tr><td class="n">205</td><td class="c"><pre>    tool(</pre></td><td class="m"></td></tr>
+<tr><td class="n">206</td><td class="c"><pre>        &quot;cancelOffer&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">207</td><td class="c"><pre>        &quot;Cancel one of your own open offers by id.&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">208</td><td class="c"><pre>        {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {&quot;offerId&quot;: {&quot;type&quot;: &quot;string&quot;}}, &quot;required&quot;: [&quot;offerId&quot;]},</pre></td><td class="m"></td></tr>
+<tr><td class="n">209</td><td class="c"><pre>    ),</pre></td><td class="m"></td></tr>
+<tr><td class="n">210</td><td class="c"><pre>]</pre></td><td class="m"></td></tr>
+<tr><td class="n">211</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">212</td><td class="c"><pre># ---- HTTP ---------------------------------------------------------------------</pre></td><td class="m"></td></tr>
+<tr><td class="n">213</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">214</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">215</td><td class="c"><pre>class Unreachable(Exception):</pre></td><td class="m"></td></tr>
+<tr><td class="n">216</td><td class="c"><pre>    &quot;&quot;&quot;A server could not be reached at all: it is down, or this computer is offline.&quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">217</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">218</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">219</td><td class="c"><pre>def http_json(method, url, token, body=None):</pre></td><td class="m"></td></tr>
+<tr><td class="n">220</td><td class="c"><pre>    &quot;&quot;&quot;Send one request and return the parsed JSON (or the raw text).&quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">221</td><td class="c"><pre>    data = None if body is None else json.dumps(body).encode(&quot;utf-8&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">222</td><td class="c"><pre>    request = urllib.request.Request(url, data=data, method=method)</pre></td><td class="m"></td></tr>
+<tr><td class="n">223</td><td class="c"><pre>    request.add_header(&quot;Authorization&quot;, f&quot;Bearer {token}&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">224</td><td class="c"><pre>    if data is not None:</pre></td><td class="m"></td></tr>
+<tr><td class="n">225</td><td class="c"><pre>        request.add_header(&quot;Content-Type&quot;, &quot;application/json&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">226</td><td class="c"><pre>    try:</pre></td><td class="m"></td></tr>
+<tr><td class="n">227</td><td class="c"><pre>        with urllib.request.urlopen(request, timeout=120) as response:</pre></td><td class="m"></td></tr>
+<tr><td class="n">228</td><td class="c"><pre>            text = response.read().decode(&quot;utf-8&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">229</td><td class="c"><pre>    except urllib.error.HTTPError as error:</pre></td><td class="m"></td></tr>
+<tr><td class="n">230</td><td class="c"><pre>        detail = error.read().decode(&quot;utf-8&quot;, errors=&quot;replace&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">231</td><td class="c"><pre>        raise RuntimeError(f&quot;{method} {url} -&gt; {error.code}: {detail}&quot;) from None</pre></td><td class="m"></td></tr>
+<tr><td class="n">232</td><td class="c"><pre>    except OSError as error:  # no answer at all: connection refused, unknown host, timeout</pre></td><td class="m"></td></tr>
+<tr><td class="n">233</td><td class="c"><pre>        reason = getattr(error, &quot;reason&quot;, error)</pre></td><td class="m"></td></tr>
+<tr><td class="n">234</td><td class="c"><pre>        server = &quot;{0.scheme}://{0.netloc}&quot;.format(urllib.parse.urlsplit(url))</pre></td><td class="m"></td></tr>
+<tr><td class="n">235</td><td class="c"><pre>        raise Unreachable(</pre></td><td class="m"></td></tr>
+<tr><td class="n">236</td><td class="c"><pre>            f&quot;Cannot reach {server} ({getattr(reason, &#x27;strerror&#x27;, None) or reason}). &quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">237</td><td class="c"><pre>            &quot;Is it running, and is this computer online?&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">238</td><td class="c"><pre>        ) from None</pre></td><td class="m"></td></tr>
+<tr><td class="n">239</td><td class="c"><pre>    try:</pre></td><td class="m"></td></tr>
+<tr><td class="n">240</td><td class="c"><pre>        return json.loads(text) if text else None</pre></td><td class="m"></td></tr>
+<tr><td class="n">241</td><td class="c"><pre>    except json.JSONDecodeError:</pre></td><td class="m"></td></tr>
+<tr><td class="n">242</td><td class="c"><pre>        return text</pre></td><td class="m"></td></tr>
+<tr><td class="n">243</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">244</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">245</td><td class="c"><pre>def call_afc(method, path, body=None):</pre></td><td class="m"></td></tr>
+<tr><td class="n">246</td><td class="c"><pre>    return http_json(method, AFC_SERVER_URL + path, AFC_API_KEY, body)</pre></td><td class="m"></td></tr>
+<tr><td class="n">247</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">248</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">249</td><td class="c"><pre>def ask_model(messages):</pre></td><td class="m"></td></tr>
+<tr><td class="n">250</td><td class="c"><pre>    &quot;&quot;&quot;One chat-completion round trip. Returns the assistant message.&quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">251</td><td class="c"><pre>    global TOTAL_TOKENS, TOTAL_COST_USD</pre></td><td class="m"></td></tr>
+<tr><td class="n">252</td><td class="c"><pre>    body = {</pre></td><td class="m"></td></tr>
+<tr><td class="n">253</td><td class="c"><pre>        &quot;model&quot;: MODEL,</pre></td><td class="m"></td></tr>
+<tr><td class="n">254</td><td class="c"><pre>        &quot;messages&quot;: messages,</pre></td><td class="m"></td></tr>
+<tr><td class="n">255</td><td class="c"><pre>        &quot;tools&quot;: TOOLS,</pre></td><td class="m"></td></tr>
+<tr><td class="n">256</td><td class="c"><pre>        &quot;max_tokens&quot;: MAX_TOKENS,</pre></td><td class="m"></td></tr>
+<tr><td class="n">257</td><td class="c"><pre>        # OpenRouter only reports what a call cost when asked to.</pre></td><td class="m"></td></tr>
+<tr><td class="n">258</td><td class="c"><pre>        &quot;usage&quot;: {&quot;include&quot;: True},</pre></td><td class="m"></td></tr>
+<tr><td class="n">259</td><td class="c"><pre>    }</pre></td><td class="m"></td></tr>
+<tr><td class="n">260</td><td class="c"><pre>    # Rate limits (429) and server errors (5xx) are temporary: wait and retry</pre></td><td class="m"></td></tr>
+<tr><td class="n">261</td><td class="c"><pre>    # instead of ending the run.</pre></td><td class="m"></td></tr>
+<tr><td class="n">262</td><td class="c"><pre>    for attempt in range(1, MODEL_RETRIES + 1):</pre></td><td class="m"></td></tr>
+<tr><td class="n">263</td><td class="c"><pre>        try:</pre></td><td class="m"></td></tr>
+<tr><td class="n">264</td><td class="c"><pre>            payload = http_json(&quot;POST&quot;, &quot;https://openrouter.ai/api/v1/chat/completions&quot;, OPENROUTER_API_KEY, body)</pre></td><td class="m"></td></tr>
+<tr><td class="n">265</td><td class="c"><pre>            break</pre></td><td class="m"></td></tr>
+<tr><td class="n">266</td><td class="c"><pre>        except RuntimeError as error:</pre></td><td class="m"></td></tr>
+<tr><td class="n">267</td><td class="c"><pre>            retryable = re.search(r&quot; -&gt; (429|5\d\d):&quot;, str(error))</pre></td><td class="m"></td></tr>
+<tr><td class="n">268</td><td class="c"><pre>            if not retryable or attempt == MODEL_RETRIES:</pre></td><td class="m"></td></tr>
+<tr><td class="n">269</td><td class="c"><pre>                raise</pre></td><td class="m"></td></tr>
+<tr><td class="n">270</td><td class="c"><pre>            wait = min(10 * attempt, 60)</pre></td><td class="m"></td></tr>
+<tr><td class="n">271</td><td class="c"><pre>            say(f&quot;model call failed ({retryable.group(1)}), retry {attempt}/{MODEL_RETRIES - 1} in {wait}s&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">272</td><td class="c"><pre>            time.sleep(wait)</pre></td><td class="m"></td></tr>
+<tr><td class="n">273</td><td class="c"><pre>    if not payload or not payload.get(&quot;choices&quot;):</pre></td><td class="m"></td></tr>
+<tr><td class="n">274</td><td class="c"><pre>        raise RuntimeError(f&quot;OpenRouter returned no choices: {payload}&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">275</td><td class="c"><pre>    usage = payload.get(&quot;usage&quot;) or {}</pre></td><td class="m"></td></tr>
+<tr><td class="n">276</td><td class="c"><pre>    TOTAL_TOKENS += usage.get(&quot;total_tokens&quot;) or 0</pre></td><td class="m"></td></tr>
+<tr><td class="n">277</td><td class="c"><pre>    # Not every provider reports a cost; the total then undercounts.</pre></td><td class="m"></td></tr>
+<tr><td class="n">278</td><td class="c"><pre>    TOTAL_COST_USD += usage.get(&quot;cost&quot;) or 0</pre></td><td class="m"></td></tr>
+<tr><td class="n">279</td><td class="c"><pre>    show_usage_in_title()</pre></td><td class="m"></td></tr>
+<tr><td class="n">280</td><td class="c"><pre>    global LAST_FINISH_REASON</pre></td><td class="m"></td></tr>
+<tr><td class="n">281</td><td class="c"><pre>    LAST_FINISH_REASON = payload[&quot;choices&quot;][0].get(&quot;finish_reason&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">282</td><td class="c"><pre>    return payload[&quot;choices&quot;][0][&quot;message&quot;]</pre></td><td class="m"></td></tr>
+<tr><td class="n">283</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">284</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">285</td><td class="c"><pre># ---- Leaderboard --------------------------------------------------------------</pre></td><td class="m"></td></tr>
+<tr><td class="n">286</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">287</td><td class="c"><pre># Set once this run has seen trading active. AFC stores the usage on my active</pre></td><td class="m"></td></tr>
+<tr><td class="n">288</td><td class="c"><pre># or latest market run, so a run that never traded must not report: it would</pre></td><td class="m"></td></tr>
+<tr><td class="n">289</td><td class="c"><pre># overwrite the totals of an earlier, finished run.</pre></td><td class="m"></td></tr>
+<tr><td class="n">290</td><td class="c"><pre>TRADING_SEEN = False</pre></td><td class="m"></td></tr>
+<tr><td class="n">291</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">292</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">293</td><td class="c"><pre>def report_usage():</pre></td><td class="m"></td></tr>
+<tr><td class="n">294</td><td class="c"><pre>    &quot;&quot;&quot;Send the model and the running totals to AFC, which shows them on the leaderboard.</pre></td><td class="m"></td></tr>
+<tr><td class="n">295</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">296</td><td class="c"><pre>    AFC keeps the last values it was sent, so this is called after every turn</pre></td><td class="m"></td></tr>
+<tr><td class="n">297</td><td class="c"><pre>    and once more when the run ends. Returns what went wrong, or None.</pre></td><td class="m"></td></tr>
+<tr><td class="n">298</td><td class="c"><pre>    &quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">299</td><td class="c"><pre>    if not TRADING_SEEN:</pre></td><td class="m"></td></tr>
+<tr><td class="n">300</td><td class="c"><pre>        return &quot;this run never saw trading start (waitForTradeStart did not report an active market)&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">301</td><td class="c"><pre>    try:</pre></td><td class="m"></td></tr>
+<tr><td class="n">302</td><td class="c"><pre>        call_afc(</pre></td><td class="m"></td></tr>
+<tr><td class="n">303</td><td class="c"><pre>            &quot;POST&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">304</td><td class="c"><pre>            MARKET_PATH + &quot;/stats&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">305</td><td class="c"><pre>            # Zero means nothing was reported by the provider, so send no value.</pre></td><td class="m"></td></tr>
+<tr><td class="n">306</td><td class="c"><pre>            {&quot;merchantModel&quot;: MODEL, &quot;totalTokenCount&quot;: TOTAL_TOKENS or None, &quot;totalCostUsd&quot;: TOTAL_COST_USD or None},</pre></td><td class="m"></td></tr>
+<tr><td class="n">307</td><td class="c"><pre>        )</pre></td><td class="m"></td></tr>
+<tr><td class="n">308</td><td class="c"><pre>    except Exception as error:  # a failed report must not stop the trading</pre></td><td class="m"></td></tr>
+<tr><td class="n">309</td><td class="c"><pre>        return str(error)[:300]</pre></td><td class="m"></td></tr>
+<tr><td class="n">310</td><td class="c"><pre>    return None</pre></td><td class="m"></td></tr>
+<tr><td class="n">311</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">312</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">313</td><td class="c"><pre># ---- Tool implementations -----------------------------------------------------</pre></td><td class="m"></td></tr>
+<tr><td class="n">314</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">315</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">316</td><td class="c"><pre>def join_market():</pre></td><td class="m"></td></tr>
+<tr><td class="n">317</td><td class="c"><pre>    &quot;&quot;&quot;Make sure we are a participant, and return the market.&quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">318</td><td class="c"><pre>    market = call_afc(&quot;GET&quot;, MARKET_PATH)</pre></td><td class="m"></td></tr>
+<tr><td class="n">319</td><td class="c"><pre>    if not market.get(&quot;isParticipant&quot;):</pre></td><td class="m"></td></tr>
+<tr><td class="n">320</td><td class="c"><pre>        call_afc(&quot;POST&quot;, MARKET_PATH + &quot;/join&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">321</td><td class="c"><pre>        market = call_afc(&quot;GET&quot;, MARKET_PATH)</pre></td><td class="m"></td></tr>
+<tr><td class="n">322</td><td class="c"><pre>    return market</pre></td><td class="m"></td></tr>
+<tr><td class="n">323</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">324</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">325</td><td class="c"><pre>def wait_for_trade_start():</pre></td><td class="m"></td></tr>
+<tr><td class="n">326</td><td class="c"><pre>    global TRADING_SEEN</pre></td><td class="m"></td></tr>
+<tr><td class="n">327</td><td class="c"><pre>    while True:</pre></td><td class="m"></td></tr>
+<tr><td class="n">328</td><td class="c"><pre>        market = call_afc(&quot;GET&quot;, MARKET_PATH)</pre></td><td class="m"></td></tr>
+<tr><td class="n">329</td><td class="c"><pre>        if market[&quot;phase&quot;] == &quot;closed&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">330</td><td class="c"><pre>            return &quot;Market is closed; trading will not start.&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">331</td><td class="c"><pre>        if market[&quot;sharingModel&quot;] == &quot;individual&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">332</td><td class="c"><pre>            if market[&quot;phase&quot;] == &quot;open&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">333</td><td class="c"><pre>                run = call_afc(&quot;POST&quot;, MARKET_PATH + &quot;/my-instance&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">334</td><td class="c"><pre>                if run[&quot;state&quot;] == &quot;trade&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">335</td><td class="c"><pre>                    TRADING_SEEN = True</pre></td><td class="m"></td></tr>
+<tr><td class="n">336</td><td class="c"><pre>                    return f&quot;Trading has started. Your individual run {run[&#x27;id&#x27;]} is open.&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">337</td><td class="c"><pre>                if run[&quot;state&quot;] == &quot;closed&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">338</td><td class="c"><pre>                    return &quot;Your individual run is closed; trading will not start until you restart it.&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">339</td><td class="c"><pre>        elif market[&quot;phase&quot;] == &quot;trade&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">340</td><td class="c"><pre>            TRADING_SEEN = True</pre></td><td class="m"></td></tr>
+<tr><td class="n">341</td><td class="c"><pre>            return &quot;Trading has started.&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">342</td><td class="c"><pre>        time.sleep(POLL_SECONDS)</pre></td><td class="m"></td></tr>
+<tr><td class="n">343</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">344</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">345</td><td class="c"><pre>def run_tool(name, args):</pre></td><td class="m"></td></tr>
+<tr><td class="n">346</td><td class="c"><pre>    &quot;&quot;&quot;Dispatch one tool call to the market API and return its result.&quot;&quot;&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">347</td><td class="c"><pre>    if name == &quot;waitForTradeStart&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">348</td><td class="c"><pre>        return wait_for_trade_start()</pre></td><td class="m"></td></tr>
+<tr><td class="n">349</td><td class="c"><pre>    if name == &quot;viewMarket&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">350</td><td class="c"><pre>        return call_afc(&quot;GET&quot;, MARKET_PATH)</pre></td><td class="m"></td></tr>
+<tr><td class="n">351</td><td class="c"><pre>    if name == &quot;viewMarketBalances&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">352</td><td class="c"><pre>        return call_afc(&quot;GET&quot;, MARKET_PATH + &quot;/balances&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">353</td><td class="c"><pre>    if name == &quot;viewMarketLog&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">354</td><td class="c"><pre>        count = args.get(&quot;count&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">355</td><td class="c"><pre>        return call_afc(&quot;GET&quot;, MARKET_PATH + (f&quot;/log/last/{int(count)}&quot; if count else &quot;/log/full&quot;))</pre></td><td class="m"></td></tr>
+<tr><td class="n">356</td><td class="c"><pre>    if name == &quot;publicMessage&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">357</td><td class="c"><pre>        return call_afc(&quot;POST&quot;, MARKET_PATH + &quot;/messages/public&quot;, {&quot;type&quot;: args[&quot;type&quot;], &quot;payload&quot;: args[&quot;payload&quot;]})</pre></td><td class="m"></td></tr>
+<tr><td class="n">358</td><td class="c"><pre>    if name == &quot;privateMessage&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">359</td><td class="c"><pre>        return call_afc(&quot;POST&quot;, MARKET_PATH + &quot;/messages/private&quot;, {&quot;to&quot;: args[&quot;to&quot;], &quot;text&quot;: args[&quot;text&quot;]})</pre></td><td class="m"></td></tr>
+<tr><td class="n">360</td><td class="c"><pre>    if name == &quot;openLink&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">361</td><td class="c"><pre>        url = str(args.get(&quot;url&quot;, &quot;&quot;))</pre></td><td class="m"></td></tr>
+<tr><td class="n">362</td><td class="c"><pre>        if not url.startswith(&quot;/market/api/&quot;):</pre></td><td class="m"></td></tr>
+<tr><td class="n">363</td><td class="c"><pre>            return {&quot;error&quot;: &quot;url must be a /market/api/ link&quot;}</pre></td><td class="m"></td></tr>
+<tr><td class="n">364</td><td class="c"><pre>        return call_afc(&quot;GET&quot;, url)</pre></td><td class="m"></td></tr>
+<tr><td class="n">365</td><td class="c"><pre>    if name == &quot;cancelOffer&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">366</td><td class="c"><pre>        offer_id = urllib.parse.quote(str(args[&quot;offerId&quot;]), safe=&quot;&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">367</td><td class="c"><pre>        return call_afc(&quot;DELETE&quot;, MARKET_PATH + f&quot;/messages/offers/{offer_id}&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">368</td><td class="c"><pre>    return {&quot;error&quot;: f&quot;Unknown tool: {name}&quot;}</pre></td><td class="m"></td></tr>
+<tr><td class="n">369</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">370</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">371</td><td class="c"><pre># ---- The agent loop -----------------------------------------------------------</pre></td><td class="m"></td></tr>
+<tr><td class="n">372</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">373</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">374</td><td class="c"><pre>def run_agent():</pre></td><td class="m"></td></tr>
+<tr><td class="n">375</td><td class="c"><pre>    market = join_market()</pre></td><td class="m"></td></tr>
+<tr><td class="n">376</td><td class="c"><pre>    me = market.get(&quot;currentUser&quot;) or {}</pre></td><td class="m"></td></tr>
+<tr><td class="n">377</td><td class="c"><pre>    say(f&quot;Session log: {os.path.relpath(LOG_PATH)}&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">378</td><td class="c"><pre>    say(f&quot;Model: {MODEL}&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">379</td><td class="c"><pre>    say(f&quot;Joined market {market[&#x27;name&#x27;]} as {me.get(&#x27;name&#x27;) or me.get(&#x27;id&#x27;)}&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">380</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">381</td><td class="c"><pre>    messages = [</pre></td><td class="m"></td></tr>
+<tr><td class="n">382</td><td class="c"><pre>        {</pre></td><td class="m"></td></tr>
+<tr><td class="n">383</td><td class="c"><pre>            &quot;role&quot;: &quot;system&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">384</td><td class="c"><pre>            &quot;content&quot;: &quot;You are an autonomous market trader in a marketplace where traders exchange goods. &quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">385</td><td class="c"><pre>            &quot;Act through tool calls.\n\n&quot; + INSTRUCTIONS,</pre></td><td class="m"></td></tr>
+<tr><td class="n">386</td><td class="c"><pre>        },</pre></td><td class="m"></td></tr>
+<tr><td class="n">387</td><td class="c"><pre>        {</pre></td><td class="m"></td></tr>
+<tr><td class="n">388</td><td class="c"><pre>            &quot;role&quot;: &quot;user&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">389</td><td class="c"><pre>            &quot;content&quot;: f&quot;You are connected to market {AFC_MARKET_ID} as {me.get(&#x27;name&#x27;)} (id: {me.get(&#x27;id&#x27;)}). &quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">390</td><td class="c"><pre>            &quot;Call waitForTradeStart first, inspect the market and your goal, then trade.&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">391</td><td class="c"><pre>        },</pre></td><td class="m"></td></tr>
+<tr><td class="n">392</td><td class="c"><pre>    ]</pre></td><td class="m"></td></tr>
+<tr><td class="n">393</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">394</td><td class="c"><pre>    # There is no turn limit: the agent trades until the model stops calling</pre></td><td class="m"></td></tr>
+<tr><td class="n">395</td><td class="c"><pre>    # tools or you press Ctrl+C. The credit limit on the OpenRouter key is what</pre></td><td class="m"></td></tr>
+<tr><td class="n">396</td><td class="c"><pre>    # caps the spending of a run that never stops.</pre></td><td class="m"></td></tr>
+<tr><td class="n">397</td><td class="c"><pre>    nudges = 0</pre></td><td class="m"></td></tr>
+<tr class="loop"><td class="n">398</td><td class="c"><pre>    for turn in itertools.count(1):</pre></td><td class="m"><span class="note">◀ The loop starts here: one pass is one model turn. There is no turn limit.</span></td></tr>
+<tr><td class="n">399</td><td class="c"><pre>        say(f&quot;\n--- turn {turn} · {usage_summary()} ---&quot;, TURN)</pre></td><td class="m"></td></tr>
+<tr class="loop"><td class="n">400</td><td class="c"><pre>        reply = ask_model(messages)</pre></td><td class="m"><span class="note">◀ Sends the whole message history to the model and gets its reply.</span></td></tr>
+<tr class="loop"><td class="n">401</td><td class="c"><pre>        messages.append(reply)</pre></td><td class="m"><span class="note">◀ Adds the model&#x27;s reply to the history so the next turn sees it.</span></td></tr>
+<tr><td class="n">402</td><td class="c"><pre>        # Some models return their reasoning separately from the visible text.</pre></td><td class="m"></td></tr>
+<tr><td class="n">403</td><td class="c"><pre>        for thought in (reply.get(&quot;reasoning&quot;), reply.get(&quot;content&quot;)):</pre></td><td class="m"></td></tr>
+<tr><td class="n">404</td><td class="c"><pre>            if thought:</pre></td><td class="m"></td></tr>
+<tr><td class="n">405</td><td class="c"><pre>                say(f&quot;agent: {thought}&quot;, REASONING)</pre></td><td class="m"></td></tr>
+<tr><td class="n">406</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr class="loop"><td class="n">407</td><td class="c"><pre>        tool_calls = reply.get(&quot;tool_calls&quot;) or []</pre></td><td class="m"><span class="note">◀ Takes the tool calls the model asked for out of its reply.</span></td></tr>
+<tr><td class="n">408</td><td class="c"><pre>        if not tool_calls:</pre></td><td class="m"></td></tr>
+<tr><td class="n">409</td><td class="c"><pre>            nudges += 1</pre></td><td class="m"></td></tr>
+<tr><td class="n">410</td><td class="c"><pre>            say(f&quot;\nreply without tool call (finish_reason={LAST_FINISH_REASON}), nudge {nudges}/{MAX_NUDGES}&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">411</td><td class="c"><pre>            if nudges &gt; MAX_NUDGES:</pre></td><td class="m"></td></tr>
+<tr><td class="n">412</td><td class="c"><pre>                # End condition: the model answered without asking for a tool, even when nudged.</pre></td><td class="m"></td></tr>
+<tr><td class="n">413</td><td class="c"><pre>                say(f&quot;\nThe agent stopped calling tools. Done. Used {usage_summary()}.&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">414</td><td class="c"><pre>                return</pre></td><td class="m"></td></tr>
+<tr><td class="n">415</td><td class="c"><pre>            messages.append({</pre></td><td class="m"></td></tr>
+<tr><td class="n">416</td><td class="c"><pre>                &quot;role&quot;: &quot;user&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">417</td><td class="c"><pre>                &quot;content&quot;: &quot;You have not stopped trading yet. Keep going until your goal is reached: &quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">418</td><td class="c"><pre>                &quot;check the market and your balances, then continue with a tool call.&quot;,</pre></td><td class="m"></td></tr>
+<tr><td class="n">419</td><td class="c"><pre>            })</pre></td><td class="m"></td></tr>
+<tr><td class="n">420</td><td class="c"><pre>            continue</pre></td><td class="m"></td></tr>
+<tr><td class="n">421</td><td class="c"><pre>        nudges = 0</pre></td><td class="m"></td></tr>
+<tr><td class="n">422</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">423</td><td class="c"><pre>        for call in tool_calls:</pre></td><td class="m"></td></tr>
+<tr><td class="n">424</td><td class="c"><pre>            name = call[&quot;function&quot;][&quot;name&quot;]</pre></td><td class="m"></td></tr>
+<tr><td class="n">425</td><td class="c"><pre>            raw_args = call[&quot;function&quot;].get(&quot;arguments&quot;) or &quot;{}&quot;</pre></td><td class="m"></td></tr>
+<tr><td class="n">426</td><td class="c"><pre>            say(f&quot;tool:  {name}({raw_args})&quot;, TOOL_CALL)</pre></td><td class="m"></td></tr>
+<tr><td class="n">427</td><td class="c"><pre>            try:</pre></td><td class="m"></td></tr>
+<tr class="loop"><td class="n">428</td><td class="c"><pre>                result = run_tool(name, json.loads(raw_args))</pre></td><td class="m"><span class="note">◀ Runs each requested tool against the market API.</span></td></tr>
+<tr><td class="n">429</td><td class="c"><pre>            except Exception as error:  # the model should see failures and react to them</pre></td><td class="m"></td></tr>
+<tr><td class="n">430</td><td class="c"><pre>                result = {&quot;error&quot;: str(error)}</pre></td><td class="m"></td></tr>
+<tr><td class="n">431</td><td class="c"><pre>            text = result if isinstance(result, str) else json.dumps(result)</pre></td><td class="m"></td></tr>
+<tr><td class="n">432</td><td class="c"><pre>            say_tool_result(text)</pre></td><td class="m"></td></tr>
+<tr class="loop"><td class="n">433</td><td class="c"><pre>            messages.append({&quot;role&quot;: &quot;tool&quot;, &quot;tool_call_id&quot;: call[&quot;id&quot;], &quot;content&quot;: text})</pre></td><td class="m"><span class="note">◀ Adds the tool result to the history for the next turn.</span></td></tr>
+<tr><td class="n">434</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">435</td><td class="c"><pre>        report_usage()  # every turn, so the leaderboard is current even if the run is killed</pre></td><td class="m"></td></tr>
+<tr><td class="n">436</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">437</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+<tr><td class="n">438</td><td class="c"><pre>if __name__ == &quot;__main__&quot;:</pre></td><td class="m"></td></tr>
+<tr><td class="n">439</td><td class="c"><pre>    try:</pre></td><td class="m"></td></tr>
+<tr><td class="n">440</td><td class="c"><pre>        run_agent()</pre></td><td class="m"></td></tr>
+<tr><td class="n">441</td><td class="c"><pre>    except KeyboardInterrupt:</pre></td><td class="m"></td></tr>
+<tr><td class="n">442</td><td class="c"><pre>        say(f&quot;\nStopped by Ctrl+C. Used {usage_summary()}.&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">443</td><td class="c"><pre>    except Unreachable as error:</pre></td><td class="m"></td></tr>
+<tr><td class="n">444</td><td class="c"><pre>        # Nothing is wrong with the code, so one line and no traceback.</pre></td><td class="m"></td></tr>
+<tr><td class="n">445</td><td class="c"><pre>        say(f&quot;\n{error} Used {usage_summary()}.&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">446</td><td class="c"><pre>        sys.exit(1)</pre></td><td class="m"></td></tr>
+<tr><td class="n">447</td><td class="c"><pre>    except Exception as error:</pre></td><td class="m"></td></tr>
+<tr><td class="n">448</td><td class="c"><pre>        # Keep the failure in the log too, then let Python report it as usual.</pre></td><td class="m"></td></tr>
+<tr><td class="n">449</td><td class="c"><pre>        say(f&quot;\nThe agent crashed: {error}. Used {usage_summary()}.&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">450</td><td class="c"><pre>        raise</pre></td><td class="m"></td></tr>
+<tr><td class="n">451</td><td class="c"><pre>    finally:</pre></td><td class="m"></td></tr>
+<tr><td class="n">452</td><td class="c"><pre>        if TOTAL_TOKENS:  # with no model call made there is nothing to report</pre></td><td class="m"></td></tr>
+<tr><td class="n">453</td><td class="c"><pre>            problem = report_usage()</pre></td><td class="m"></td></tr>
+<tr><td class="n">454</td><td class="c"><pre>            if problem:</pre></td><td class="m"></td></tr>
+<tr><td class="n">455</td><td class="c"><pre>                say(f&quot;Leaderboard: usage was not reported - {problem}.&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">456</td><td class="c"><pre>            else:</pre></td><td class="m"></td></tr>
+<tr><td class="n">457</td><td class="c"><pre>                say(f&quot;Leaderboard: reported {MODEL} · {usage_summary()}.&quot;)</pre></td><td class="m"></td></tr>
+<tr><td class="n">458</td><td class="c"><pre>        LOG_FILE.close()</pre></td><td class="m"></td></tr>
+<tr><td class="n">459</td><td class="c"><pre></pre></td><td class="m"></td></tr>
+</table></div>
+</body></html>
