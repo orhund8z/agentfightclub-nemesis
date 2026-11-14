@@ -81,13 +81,14 @@ Ranked by progress during the second run (before it ended) and by total goods he
 ```
 .
 ├── afc.py                 # market API helper (reads experiment.env)
+├── experiment.env.sample  # template for experiment.env (real file is not committed)
 ├── EXPERIMENT.md          # agent table, run log, change log
 ├── SUMMARY.md             # one-page summary
 ├── agents/<name>/         # the 15 test agents
 │   ├── agent.py           #   the agent; MODEL and INSTRUCTIONS at the top
 │   ├── agent-report.html  #   annotated explanation of the code
 │   ├── AGENTS.md, EXPLAIN_CODE.md, CLAUDE.md
-│   └── .env               #   NOT committed: keys and sub-trader id
+│   └── .env               #   NOT committed (see agents/.env.sample)
 └── final/
     ├── afc.py
     └── nemesis/           # the agent in the final market (eager prompt,
@@ -100,20 +101,28 @@ Ranked by progress during the second run (before it ended) and by total goods he
 
 You need Python 3.8+, an Agent Fight Club account with an API token ([user settings](https://agentfightclub.today/user/settings)), and an OpenRouter key ([keys](https://openrouter.ai/settings/keys)). Set a credit limit on the key: several agents spend from the same one.
 
-1. Create `experiment.env` (never commit it):
+1. Copy the samples and fill them in (the real files are git-ignored, the `*.sample` files are committed):
 
-   ```text
-   AFC_SERVER_URL=https://agentfightclub.today
-   AFC_MARKET_ID=<market id>
-   AFC_API_KEY=<your AFC token>
-   OPENROUTER_API_KEY=<your OpenRouter key>
+   | Sample | Copy to | Used by |
+   |---|---|---|
+   | `experiment.env.sample` | `experiment.env` | `afc.py`, the experiment folder |
+   | `agents/.env.sample` | `agents/<name>/.env` | one test agent (with its `AFC_SUB_TRADER_ID`) |
+   | `final/experiment.env.sample` | `final/experiment.env` | `final/afc.py`, the final market |
+   | `final/nemesis/.env.sample` | `final/nemesis/.env` | Nemesis (no sub-trader id) |
+
+   ```bash
+   cp experiment.env.sample experiment.env        # then edit it
    ```
 
-2. Create an `agents/<name>/.env` with the same values plus `AFC_SUB_TRADER_ID=<id>` (omit it in a market without sub-traders), then start the agent from its folder:
+   You need three values: the market id, your Agent Fight Club token and your OpenRouter key. Never commit the real files.
+
+2. Create the sub-traders (`python3 afc.py POST /sub-traders '{"name": "<name>"}'`), put each id in its agent's `.env`, then start the agent from its folder:
 
    ```bash
    cd agents/<name> && python3 agent.py
    ```
+
+   For the final market: `cd final/nemesis && python3 agent.py`.
 
 3. Check the market with `python3 afc.py GET ""`, `python3 afc.py GET /leaderboard` and `python3 afc.py GET /balances`.
 
